@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+
+# Virtual environment — never copy this
+.venv/
+venv/
+env/
+
+# Environment variables — never copy real .env
+.env
+.env.local
+.env.production
+
+# RAG data — mounted as volumes instead
+vector_db/
+models_cache/
+my_docs/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Docker files themselves
+Dockerfile
+docker-compose*.yml
+
+# Tests (optional — remove if you want tests in image)
+tests/
+
+# OS
+.DS_Store
+Thumbs.db

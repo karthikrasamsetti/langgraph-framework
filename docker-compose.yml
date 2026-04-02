@@ -1,0 +1,38 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: langgraph-agent
+    ports:
+      - "8000:8000"
+
+    # Load your .env file
+    env_file:
+      - .env
+
+    # Override specific vars for dev
+    environment:
+      - LOG_LEVEL=DEBUG
+      - TRANSFORMERS_OFFLINE=1
+      - HF_DATASETS_OFFLINE=1
+      - SENTENCE_TRANSFORMERS_HOME=/app/models_cache
+
+    # Volumes — persist data outside the container
+    # Left side  = your machine
+    # Right side = inside container
+    volumes:
+      - ./vector_db:/app/vector_db       # ChromaDB data persists
+      - ./my_docs:/app/my_docs           # your documents
+      - ./models_cache:/app/models_cache # embedding model cache
+
+    # Restart automatically if it crashes
+    restart: unless-stopped
+
+    # Resource limits — prevents runaway memory usage
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G

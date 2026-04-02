@@ -1,0 +1,38 @@
+# Used alongside docker-compose.yml for production
+# Run with: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  app:
+    # In production use a pre-built image from a registry
+    # instead of building from source every time
+    image: langgraph-framework:latest
+
+    environment:
+      - LOG_LEVEL=INFO
+      - TRANSFORMERS_OFFLINE=1
+      - HF_DATASETS_OFFLINE=1
+      - SENTENCE_TRANSFORMERS_HOME=/app/models_cache
+
+    # Multiple workers for production traffic
+    command: uvicorn api.server:app --host 0.0.0.0 --port 8000 --workers 4
+
+    # Don't mount source code in production
+    # The image itself contains the code
+    volumes:
+      - langgraph_vector_db:/app/vector_db
+      - langgraph_models:/app/models_cache
+
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 2G
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+
+# Named volumes for production — managed by Docker
+volumes:
+  langgraph_vector_db:
+  langgraph_models:
