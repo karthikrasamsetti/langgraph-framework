@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     EMBEDDING_LOCAL_MODEL:  str                     = "all-MiniLM-L6-v2"
     EMBEDDING_OPENAI_MODEL: str                     = "text-embedding-3-small"
 
+    # ── Multi-agent ───────────────────────────────────────────────────────────────
+    MULTI_AGENT_ENABLED: bool = True
+    SUPERVISOR_MAX_ITERATIONS: int = 3   # max specialist calls per query
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

@@ -93,6 +93,34 @@ if LANGSMITH_ENABLED:
 #     yield
 #     log.info("shutdown")
 
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     log.info("startup",
+#              provider=settings.LLM_PROVIDER,
+#              checkpointer=settings.CHECKPOINTER,
+#              langsmith=LANGSMITH_ENABLED)
+
+#     # ── Pre-warm everything at startup ────────────────────────────
+#     get_graph()
+
+#     if settings.RAG_ENABLED:
+#         try:
+#             from rag.embeddings import get_embedding_function
+#             from rag.retriever import get_collection, get_collection_stats
+#             print("[RAG] Pre-loading embedding model...")
+#             get_embedding_function()          # loads model into RAM now
+#             get_collection()                  # opens ChromaDB connection now
+#             stats = get_collection_stats()
+#             print(f"[RAG] Ready — {stats.get('total_chunks', 0)} chunks indexed")
+#             log.info("rag_ready",
+#                      chunks=stats.get("total_chunks", 0),
+#                      collection=stats.get("collection"))
+#         except Exception as e:
+#             log.warning("rag_init_failed", error=str(e))
+
+#     yield
+#     log.info("shutdown")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info("startup",
@@ -100,16 +128,29 @@ async def lifespan(app: FastAPI):
              checkpointer=settings.CHECKPOINTER,
              langsmith=LANGSMITH_ENABLED)
 
-    # ── Pre-warm everything at startup ────────────────────────────
-    get_graph()
+    get_graph()   # warm up single agent
+
+    # ── Warm up multi-agent system ─────────────────────────────────
+    try:
+        from agents.supervisor import get_supervisor_graph
+        from agents.research_agent import get_research_graph
+        from agents.code_agent import get_code_graph
+        from agents.general_agent import get_general_graph
+        get_supervisor_graph()
+        get_research_graph()
+        get_code_graph()
+        get_general_graph()
+        log.info("multi_agent_ready")
+    except Exception as e:
+        log.warning("multi_agent_init_failed", error=str(e))
 
     if settings.RAG_ENABLED:
         try:
             from rag.embeddings import get_embedding_function
             from rag.retriever import get_collection, get_collection_stats
             print("[RAG] Pre-loading embedding model...")
-            get_embedding_function()          # loads model into RAM now
-            get_collection()                  # opens ChromaDB connection now
+            get_embedding_function()
+            get_collection()
             stats = get_collection_stats()
             print(f"[RAG] Ready — {stats.get('total_chunks', 0)} chunks indexed")
             log.info("rag_ready",
@@ -120,7 +161,6 @@ async def lifespan(app: FastAPI):
 
     yield
     log.info("shutdown")
-
 
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -314,3 +354,80 @@ async def get_session_history(session_id: str):
         return {"session_id": session_id, "messages": messages}
     except Exception as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+    
+
+# ── POST /multi-agent/chat ────────────────────────────────────────────────────
+class MultiAgentResponse(BaseModel):
+    session_id:      str
+    response:        str
+    agent_used:      Optional[str] = None
+    iteration_count: int           = 0
+    error:           Optional[str] = None
+    trace_url:       Optional[str] = None
+
+
+@app.post("/multi-agent/chat", response_model=MultiAgentResponse)
+async def multi_agent_chat(req: ChatRequest):
+    """
+    Multi-agent endpoint — supervisor routes to the best specialist.
+    research agent  → web search + document search
+    code agent      → calculator + http + time
+    general agent   → conversation from knowledge
+    """
+    from agents.supervisor import get_supervisor_graph, SupervisorState
+
+    session_id = req.session_id or str(uuid.uuid4())
+    graph      = get_supervisor_graph()
+
+    initial_state = SupervisorState(
+        messages=[],
+        user_input=req.message,
+        next_agent=None,
+        agent_result=None,
+        final_response=None,
+        error=None,
+        iteration_count=0,
+        metadata={
+            "session_id": session_id,
+            "user_id":    req.user_id or "anonymous",
+        },
+    )
+
+    config = {
+        "configurable": {"thread_id": f"multi-{session_id}"},
+        "run_name":     f"multi-agent · {session_id[:8]}",
+        "tags":         [settings.LLM_PROVIDER, "multi-agent"],
+        "metadata": {
+            "session_id": session_id,
+            "provider":   settings.LLM_PROVIDER,
+            "mode":       "multi-agent",
+        },
+    }
+
+    try:
+        final_state = await asyncio.to_thread(
+            graph.invoke, initial_state, config
+        )
+
+        trace_url = (
+            f"https://smith.langchain.com/projects/{settings.LANGSMITH_PROJECT}"
+            if LANGSMITH_ENABLED else None
+        )
+
+        log.info("multi_agent_complete",
+                 session_id=session_id,
+                 agent_used=final_state.get("next_agent"),
+                 trace_url=trace_url)
+
+        return MultiAgentResponse(
+            session_id=session_id,
+            response=final_state.get("final_response", ""),
+            agent_used=final_state.get("next_agent"),
+            iteration_count=final_state.get("iteration_count", 0),
+            error=final_state.get("error"),
+            trace_url=trace_url,
+        )
+
+    except Exception as exc:
+        log.error("multi_agent_error", session_id=session_id, error=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc))
