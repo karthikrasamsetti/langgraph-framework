@@ -5,179 +5,191 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LangGraph Agent</title>
 <style>
-  /* ── Reset ── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg:       #ffffff;  --bg2:      #f7f7f5;  --bg3:      #f0efe9;
-    --border:   #e5e4dc;  --border2:  #d3d1c7;
-    --text:     #1a1a18;  --text2:    #6b6b64;  --text3:    #9e9d97;
-    --purple:   #534AB7;  --purple-bg:#EEEDFE;  --purple-t: #26215C;
-    --teal:     #0F6E56;  --teal-bg:  #E1F5EE;  --teal-t:   #04342C;
-    --green-bg: #EAF3DE;  --green-t:  #27500A;  --green-b:  #97C459;
-    --amber-bg: #FAEEDA;  --amber-t:  #412402;  --amber-b:  #EF9F27;
-    --red-bg:   #FCEBEB;  --red-t:    #501313;
-    --radius:   8px;      --radius-lg:12px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --bg:#ffffff; --bg2:#f7f7f5; --bg3:#f0efe9;
+    --border:#e5e4dc; --border2:#d3d1c7;
+    --text:#1a1a18; --text2:#6b6b64; --text3:#9e9d97;
+    --purple:#534AB7; --purple-bg:#EEEDFE; --purple-t:#26215C;
+    --teal:#0F6E56; --teal-bg:#E1F5EE; --teal-t:#04342C;
+    --green-bg:#EAF3DE; --green-t:#27500A; --green-b:#97C459;
+    --amber-bg:#FAEEDA; --amber-t:#412402; --amber-b:#EF9F27;
+    --red-bg:#FCEBEB; --red-t:#501313;
+    --radius:8px; --radius-lg:12px;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
+  @media (prefers-color-scheme:dark){
+    :root{
       --bg:#1e1e1c; --bg2:#252523; --bg3:#2c2c2a;
       --border:#3a3a38; --border2:#4a4a48;
       --text:#e8e6dc; --text2:#9e9d97; --text3:#6b6b64;
       --purple-bg:#26215C; --purple-t:#CECBF6;
       --teal-bg:#04342C; --teal-t:#9FE1CB;
+      --amber-bg:#412402; --amber-t:#FAEEDA;
+      --green-bg:#173404; --green-t:#C0DD97;
     }
   }
 
-  body { background: var(--bg3); height: 100dvh; display: flex; flex-direction: column; }
+  body { background:var(--bg3); height:100dvh; display:flex; flex-direction:column; }
+  .app { display:flex; flex:1; overflow:hidden; max-width:1200px; width:100%; margin:0 auto; }
+  .sidebar { width:240px; background:var(--bg2); border-right:0.5px solid var(--border); display:flex; flex-direction:column; }
+  .main { flex:1; display:flex; flex-direction:column; background:var(--bg); }
 
-  /* ── Layout ── */
-  .app     { display: flex; flex: 1; overflow: hidden; max-width: 1200px; width: 100%; margin: 0 auto; }
-  .sidebar { width: 240px; background: var(--bg2); border-right: 0.5px solid var(--border); display: flex; flex-direction: column; }
-  .main    { flex: 1; display: flex; flex-direction: column; background: var(--bg); }
+  .sb-header { padding:16px; border-bottom:0.5px solid var(--border); }
+  .sb-header h1 { font-size:15px; font-weight:500; color:var(--text); }
+  .sb-header p  { font-size:12px; color:var(--text2); margin-top:2px; }
 
-  /* ── Sidebar ── */
-  .sb-header { padding: 16px; border-bottom: 0.5px solid var(--border); }
-  .sb-header h1 { font-size: 15px; font-weight: 500; color: var(--text); }
-  .sb-header p  { font-size: 12px; color: var(--text2); margin-top: 2px; }
-
-  .provider-block { padding: 12px 16px; border-bottom: 0.5px solid var(--border); }
-  .provider-block label { display: block; font-size: 11px; color: var(--text2); margin-bottom: 4px; }
+  .provider-block { padding:12px 16px; border-bottom:0.5px solid var(--border); }
+  .provider-block label { display:block; font-size:11px; color:var(--text2); margin-bottom:4px; }
   .provider-block select,
-  .provider-block input  { width: 100%; font-size: 12px; padding: 5px 8px;
-    border: 0.5px solid var(--border2); border-radius: var(--radius);
-    background: var(--bg); color: var(--text); }
+  .provider-block input { width:100%; font-size:12px; padding:5px 8px;
+    border:0.5px solid var(--border2); border-radius:var(--radius);
+    background:var(--bg); color:var(--text); }
 
-  .sessions-list { flex: 1; overflow-y: auto; padding: 8px; }
-  .session-item  { padding: 8px 10px; border-radius: var(--radius); cursor: pointer;
-    border: 0.5px solid transparent; margin-bottom: 3px; }
-  .session-item:hover   { background: var(--bg); }
-  .session-item.active  { background: var(--bg); border-color: var(--border2); }
-  .session-item .s-id   { font-size: 11px; font-weight: 500; color: var(--text); }
-  .session-item .s-prev { font-size: 11px; color: var(--text2); white-space: nowrap;
-    overflow: hidden; text-overflow: ellipsis; max-width: 190px; margin-top: 1px; }
+  .mode-btn { flex:1; padding:5px 8px; font-size:12px; border-radius:var(--radius);
+    border:0.5px solid var(--border2); cursor:pointer; transition:all .15s; }
+  .mode-btn.active  { background:var(--purple-bg); color:var(--purple-t); border-color:#AFA9EC; }
+  .mode-btn.inactive{ background:var(--bg); color:var(--text2); }
+  .mode-btn.inactive:hover { background:var(--bg3); }
 
-  .new-sess-btn { margin: 8px; padding: 8px; text-align: center; font-size: 12px;
-    border: 0.5px dashed var(--border2); border-radius: var(--radius);
-    cursor: pointer; color: var(--text2); }
-  .new-sess-btn:hover { background: var(--bg); color: var(--text); }
+  .sessions-list { flex:1; overflow-y:auto; padding:8px; }
+  .session-item { padding:8px 10px; border-radius:var(--radius); cursor:pointer;
+    border:0.5px solid transparent; margin-bottom:3px; }
+  .session-item:hover  { background:var(--bg); }
+  .session-item.active { background:var(--bg); border-color:var(--border2); }
+  .session-item .s-id   { font-size:11px; font-weight:500; color:var(--text); }
+  .session-item .s-prev { font-size:11px; color:var(--text2); white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; max-width:190px; margin-top:1px; }
 
-  /* ── Topbar ── */
-  .topbar { padding: 10px 16px; border-bottom: 0.5px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between; }
-  .topbar-title { font-size: 13px; font-weight: 500; color: var(--text); }
-  .topbar-stats { display: flex; gap: 6px; }
-  .pill { font-size: 11px; padding: 3px 9px; border-radius: 999px;
-    background: var(--bg2); color: var(--text2); border: 0.5px solid var(--border); }
-  .pill.active { background: var(--purple-bg); color: var(--purple-t); border-color: transparent; }
+  .new-sess-btn { margin:8px; padding:8px; text-align:center; font-size:12px;
+    border:0.5px dashed var(--border2); border-radius:var(--radius);
+    cursor:pointer; color:var(--text2); }
+  .new-sess-btn:hover { background:var(--bg); color:var(--text); }
 
-  /* ── Messages ── */
-  .messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
-  .msg       { display: flex; gap: 10px; align-items: flex-start; }
-  .msg.user  { flex-direction: row-reverse; }
+  .topbar { padding:10px 16px; border-bottom:0.5px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between; }
+  .topbar-title { font-size:13px; font-weight:500; color:var(--text); }
+  .topbar-stats { display:flex; gap:6px; }
+  .pill { font-size:11px; padding:3px 9px; border-radius:999px;
+    background:var(--bg2); color:var(--text2); border:0.5px solid var(--border); }
+  .pill.active { background:var(--purple-bg); color:var(--purple-t); border-color:transparent; }
 
-  .avatar { width: 30px; height: 30px; border-radius: 50%; display: flex;
-    align-items: center; justify-content: center; font-size: 11px; font-weight: 500; flex-shrink: 0; }
-  .avatar.agent { background: var(--purple-bg); color: var(--purple-t); }
-  .avatar.user  { background: var(--teal-bg);   color: var(--teal-t); }
+  .messages { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:14px; }
+  .msg       { display:flex; gap:10px; align-items:flex-start; }
+  .msg.user  { flex-direction:row-reverse; }
 
-  .bubble-wrap { display: flex; flex-direction: column; max-width: 72%; }
-  .msg.user .bubble-wrap { align-items: flex-end; }
+  .avatar { width:30px; height:30px; border-radius:50%; display:flex;
+    align-items:center; justify-content:center; font-size:11px; font-weight:500; flex-shrink:0; }
+  .avatar.agent { background:var(--purple-bg); color:var(--purple-t); }
+  .avatar.user  { background:var(--teal-bg);   color:var(--teal-t); }
 
-  .bubble { padding: 10px 14px; border-radius: var(--radius-lg); font-size: 13px;
-    line-height: 1.6; color: var(--text); white-space: pre-wrap; word-break: break-word; }
-  .msg.agent .bubble { background: var(--bg2); border: 0.5px solid var(--border);
-    border-top-left-radius: 3px; }
-  .msg.user  .bubble { background: var(--purple-bg); border: 0.5px solid #AFA9EC;
-    border-top-right-radius: 3px; color: var(--purple-t); }
+  .bubble-wrap { display:flex; flex-direction:column; max-width:72%; }
+  .msg.user .bubble-wrap { align-items:flex-end; }
 
-  .tool-row  { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
-  .tool-chip { font-size: 11px; padding: 2px 8px; border-radius: 999px;
-    background: var(--green-bg); color: var(--green-t); border: 0.5px solid var(--green-b); }
-  .msg-meta  { font-size: 10px; color: var(--text3); margin-top: 3px; }
-  .msg.user .msg-meta { text-align: right; }
+  .bubble { padding:10px 14px; border-radius:var(--radius-lg); font-size:13px;
+    line-height:1.6; color:var(--text); white-space:pre-wrap; word-break:break-word; }
+  .msg.agent .bubble { background:var(--bg2); border:0.5px solid var(--border); border-top-left-radius:3px; }
+  .msg.user  .bubble { background:var(--purple-bg); border:0.5px solid #AFA9EC;
+    border-top-right-radius:3px; color:var(--purple-t); }
 
-  /* ── Thinking ── */
-  .thinking-bubble { background: var(--bg2); border: 0.5px solid var(--border);
-    border-radius: var(--radius-lg); border-top-left-radius: 3px;
-    padding: 10px 16px; display: flex; gap: 5px; align-items: center; }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text3);
-    animation: dot-pulse 1.2s ease-in-out infinite; }
-  .dot:nth-child(2) { animation-delay: .2s; }
-  .dot:nth-child(3) { animation-delay: .4s; }
-  @keyframes dot-pulse { 0%,80%,100%{transform:scale(.6);opacity:.4} 40%{transform:scale(1);opacity:1} }
+  .tool-row  { display:flex; gap:4px; flex-wrap:wrap; margin-top:6px; }
+  .tool-chip { font-size:11px; padding:2px 8px; border-radius:999px;
+    background:var(--green-bg); color:var(--green-t); border:0.5px solid var(--green-b); }
 
-  /* ── Node trace ── */
-  .node-trace { padding: 8px 16px; border-top: 0.5px solid var(--border);
-    display: flex; gap: 5px; align-items: center; flex-wrap: wrap; min-height: 36px; }
-  .node-trace span { font-size: 10px; }
-  .n-pill { font-size: 10px; padding: 2px 8px; border-radius: 999px;
-    background: var(--bg2); color: var(--text2); border: 0.5px solid var(--border); }
-  .n-pill.done   { background: var(--teal-bg);   color: var(--teal-t); border-color: #9FE1CB; }
-  .n-pill.active { background: var(--amber-bg); color: var(--amber-t); border-color: var(--amber-b); }
+  .agent-badge { display:inline-block; font-size:10px; padding:2px 8px;
+    border-radius:999px; margin-top:4px; font-weight:500; }
+  .agent-research { background:#E1F5EE; color:#04342C; border:0.5px solid #9FE1CB; }
+  .agent-code     { background:#EEEDFE; color:#26215C; border:0.5px solid #AFA9EC; }
+  .agent-general  { background:#FAEEDA; color:#412402; border:0.5px solid #EF9F27; }
 
-  /* ── Input area ── */
-  .input-area { padding: 12px 16px; border-top: 0.5px solid var(--border);
-    display: flex; gap: 8px; align-items: flex-end; }
-  .input-area textarea { flex: 1; resize: none; min-height: 40px; max-height: 120px;
-    padding: 8px 12px; font-size: 13px; line-height: 1.5; font-family: inherit;
-    border: 0.5px solid var(--border2); border-radius: var(--radius-lg);
-    background: var(--bg); color: var(--text); outline: none; }
-  .input-area textarea:focus { border-color: var(--purple); }
-  .send-btn { width: 38px; height: 38px; border-radius: var(--radius);
-    background: var(--purple); border: none; cursor: pointer;
-    display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .send-btn:hover   { background: #3C3489; }
-  .send-btn:disabled{ background: var(--border); cursor: not-allowed; }
-  .send-btn svg { width: 16px; height: 16px; fill: white; }
+  .msg-meta { font-size:10px; color:var(--text3); margin-top:3px; }
+  .msg.user .msg-meta { text-align:right; }
 
-  /* ── Error toast ── */
-  .toast { position: fixed; bottom: 20px; right: 20px; background: var(--red-bg);
-    color: var(--red-t); border-radius: var(--radius); padding: 10px 16px;
-    font-size: 13px; border: 0.5px solid #F09595; display: none; z-index: 100; }
-  .toast.show { display: block; }
+  .thinking-bubble { background:var(--bg2); border:0.5px solid var(--border);
+    border-radius:var(--radius-lg); border-top-left-radius:3px;
+    padding:10px 16px; display:flex; gap:5px; align-items:center; }
+  .dot { width:7px; height:7px; border-radius:50%; background:var(--text3);
+    animation:dot-pulse 1.2s ease-in-out infinite; }
+  .dot:nth-child(2){animation-delay:.2s;}
+  .dot:nth-child(3){animation-delay:.4s;}
+  @keyframes dot-pulse{0%,80%,100%{transform:scale(.6);opacity:.4}40%{transform:scale(1);opacity:1}}
+
+  .node-trace { padding:8px 16px; border-top:0.5px solid var(--border);
+    display:flex; gap:5px; align-items:center; flex-wrap:wrap; min-height:36px; }
+  .n-pill { font-size:10px; padding:2px 8px; border-radius:999px;
+    background:var(--bg2); color:var(--text2); border:0.5px solid var(--border); }
+  .n-pill.done   { background:var(--teal-bg);  color:var(--teal-t); border-color:#9FE1CB; }
+  .n-pill.active { background:var(--amber-bg); color:var(--amber-t); border-color:var(--amber-b); }
+
+  .input-area { padding:12px 16px; border-top:0.5px solid var(--border);
+    display:flex; gap:8px; align-items:flex-end; }
+  .input-area textarea { flex:1; resize:none; min-height:40px; max-height:120px;
+    padding:8px 12px; font-size:13px; line-height:1.5; font-family:inherit;
+    border:0.5px solid var(--border2); border-radius:var(--radius-lg);
+    background:var(--bg); color:var(--text); outline:none; }
+  .input-area textarea:focus { border-color:var(--purple); }
+  .send-btn { width:38px; height:38px; border-radius:var(--radius);
+    background:var(--purple); border:none; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .send-btn:hover    { background:#3C3489; }
+  .send-btn:disabled { background:var(--border); cursor:not-allowed; }
+  .send-btn svg { width:16px; height:16px; fill:white; }
+
+  .toast { position:fixed; bottom:20px; right:20px; background:var(--red-bg);
+    color:var(--red-t); border-radius:var(--radius); padding:10px 16px;
+    font-size:13px; border:0.5px solid #F09595; display:none; z-index:100; }
+  .toast.show { display:block; }
 </style>
 </head>
 <body>
 <div class="app">
 
-  <!-- Sidebar -->
   <div class="sidebar">
     <div class="sb-header">
       <h1>LangGraph Agent</h1>
-      <p id="sb-provider-label">OpenAI GPT-4o</p>
+      <p id="sb-provider-label">AWS Bedrock</p>
     </div>
 
     <div class="provider-block">
       <label>Provider</label>
       <select id="provider-sel" onchange="setProvider(this.value)">
+        <option value="bedrock">AWS Bedrock</option>
         <option value="openai">OpenAI</option>
         <option value="anthropic">Anthropic</option>
-        <option value="bedrock">AWS Bedrock</option>
+        <option value="groq">Groq (LPU)</option>
         <option value="ollama">Ollama (local)</option>
         <option value="huggingface">HuggingFace</option>
         <option value="azure_openai">Azure OpenAI</option>
-        <option value="groq">Groq (LPU)</option>
       </select>
     </div>
 
     <div class="provider-block">
+      <label>Agent mode</label>
+      <div style="display:flex;gap:6px;margin-top:4px">
+        <button id="btn-multi"  class="mode-btn active"   onclick="setMode('multi')">Multi-agent</button>
+        <button id="btn-single" class="mode-btn inactive" onclick="setMode('single')">Single</button>
+      </div>
+      <p id="mode-caption" style="font-size:11px;color:var(--text2);margin-top:6px">
+        Supervisor routes to specialist
+      </p>
+    </div>
+
+    <div class="provider-block">
       <label>API base URL</label>
-      <input type="text" id="api-url" value="http://localhost:8000" placeholder="http://localhost:8000">
+      <input type="text" id="api-url" value="http://localhost:8000">
     </div>
 
     <div class="sessions-list" id="sessions-list"></div>
     <div class="new-sess-btn" onclick="newSession()">+ new session</div>
   </div>
 
-  <!-- Main chat -->
   <div class="main">
     <div class="topbar">
       <span class="topbar-title" id="topbar-label">—</span>
       <div class="topbar-stats">
         <span class="pill" id="pill-steps">0 steps</span>
-        <span class="pill" id="pill-tools">0 tools</span>
-        <span class="pill" id="pill-prov">openai</span>
+        <span class="pill" id="pill-agent">multi-agent</span>
+        <span class="pill" id="pill-prov">bedrock</span>
       </div>
     </div>
 
@@ -194,7 +206,8 @@
     </div>
 
     <div class="input-area">
-      <textarea id="msg-input" rows="1" placeholder="Message the agent… (Shift+Enter for newline)"
+      <textarea id="msg-input" rows="1"
+        placeholder="Message the agent… (Shift+Enter for newline)"
         onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
       <button class="send-btn" id="send-btn" onclick="sendMsg()" disabled>
         <svg viewBox="0 0 16 16"><path d="M14.5 8L2 14l2.5-6H14.5zM2 2l12.5 6L4.5 8 2 2z"/></svg>
@@ -208,23 +221,34 @@
 <script>
 // ── State ──────────────────────────────────────────────────────────────────────
 const state = {
-  sessions: {},           // id → { messages, iters, tools }
-  activeId: null,
-  provider: 'openai',
-  apiBase:  'http://localhost:8000',
+  sessions:  {},
+  activeId:  null,
+  provider:  'bedrock',
+  agentMode: 'multi',    // 'multi' | 'single'
 };
 
-const NODES = ['input_validator','llm_reasoner','tool_executor','response_formatter'];
+const SINGLE_NODES = ['input_validator','llm_reasoner','tool_executor','response_formatter'];
+const MULTI_NODES  = ['supervisor_classifier','supervisor_run_agent','supervisor_formatter'];
+
+const AGENT_COLORS = {
+  research: 'agent-research',
+  code:     'agent-code',
+  general:  'agent-general',
+};
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-const $ = id => document.getElementById(id);
-const genId = () => Math.random().toString(36).slice(2,8).toUpperCase();
-const ts = () => new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-const delay = ms => new Promise(r => setTimeout(r, ms));
+const $      = id => document.getElementById(id);
+const genId  = () => Math.random().toString(36).slice(2,8).toUpperCase();
+const ts     = () => new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+const delay  = ms => new Promise(r => setTimeout(r, ms));
 
 function showToast(msg, ms=4000){
   const t = $('toast'); t.textContent = msg; t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'), ms);
+}
+
+function escHtml(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 // ── Provider ───────────────────────────────────────────────────────────────────
@@ -232,6 +256,25 @@ function setProvider(v){
   state.provider = v;
   $('sb-provider-label').textContent = $('provider-sel').options[$('provider-sel').selectedIndex].text;
   $('pill-prov').textContent = v;
+}
+
+// ── Mode ───────────────────────────────────────────────────────────────────────
+function setMode(mode){
+  state.agentMode = mode;
+  const isMulti = mode === 'multi';
+
+  $('btn-multi').className  = 'mode-btn ' + (isMulti  ? 'active' : 'inactive');
+  $('btn-single').className = 'mode-btn ' + (!isMulti ? 'active' : 'inactive');
+
+  $('mode-caption').textContent = isMulti
+    ? 'Supervisor routes to specialist'
+    : 'Direct single agent';
+
+  $('pill-agent').textContent = isMulti ? 'multi-agent' : 'single';
+  $('pill-agent').className   = 'pill' + (isMulti ? ' active' : '');
+
+  // Reset trace display for new mode
+  setTrace([], '');
 }
 
 // ── Sessions ───────────────────────────────────────────────────────────────────
@@ -246,7 +289,7 @@ function switchSession(id){
   renderSessions();
   renderMessages();
   updateStats();
-  $('topbar-label').textContent = 'Session '+id;
+  $('topbar-label').textContent = 'Session ' + id;
   $('send-btn').disabled = false;
   $('msg-input').focus();
 }
@@ -266,131 +309,193 @@ function renderSessions(){
 // ── Messages ───────────────────────────────────────────────────────────────────
 function renderMessages(){
   const el = $('messages');
-  const s = state.sessions[state.activeId];
-  if(!s||!s.messages.length){
-    el.innerHTML=`<div style="flex:1;display:flex;align-items:center;justify-content:center;
-      color:var(--text3);font-size:13px">Send a message to begin</div>`;
+  const s  = state.sessions[state.activeId];
+  if(!s || !s.messages.length){
+    el.innerHTML = `<div style="flex:1;display:flex;align-items:center;
+      justify-content:center;color:var(--text3);font-size:13px">
+      Send a message to begin</div>`;
     return;
   }
-  el.innerHTML = s.messages.map(m=>{
-    const chips = (m.tools||[]).map(t=>`<span class="tool-chip">${t}</span>`).join('');
+
+  el.innerHTML = s.messages.map(m => {
+    const chips = (m.tools||[]).map(t =>
+      `<span class="tool-chip">${t}</span>`
+    ).join('');
+
+    const agentBadge = m.agentUsed
+      ? `<span class="agent-badge ${AGENT_COLORS[m.agentUsed]||''}">
+           ${m.agentUsed} agent
+         </span>`
+      : '';
+
     return `<div class="msg ${m.role}">
       <div class="avatar ${m.role}">${m.role==='agent'?'AG':'U'}</div>
       <div class="bubble-wrap">
         <div class="bubble">${escHtml(m.text)}</div>
-        ${chips?`<div class="tool-row">${chips}</div>`:''}
+        ${agentBadge}
+        ${chips ? `<div class="tool-row">${chips}</div>` : ''}
         <div class="msg-meta">${m.time} · ${m.prov}</div>
       </div>
     </div>`;
   }).join('');
+
   el.scrollTop = el.scrollHeight;
 }
 
-function escHtml(s){
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
+// ── Thinking indicator ─────────────────────────────────────────────────────────
 function addThinking(){
   const el = $('messages');
-  const d = document.createElement('div');
-  d.className='msg agent'; d.id='thinking';
-  d.innerHTML=`<div class="avatar agent">AG</div>
+  const d  = document.createElement('div');
+  d.className = 'msg agent'; d.id = 'thinking';
+  d.innerHTML = `<div class="avatar agent">AG</div>
     <div class="bubble-wrap">
       <div class="thinking-bubble">
         <div class="dot"></div><div class="dot"></div><div class="dot"></div>
       </div>
     </div>`;
-  el.appendChild(d); el.scrollTop=el.scrollHeight;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
 }
-function removeThinking(){const e=$('thinking');if(e)e.remove();}
+function removeThinking(){ const e=$('thinking'); if(e) e.remove(); }
 
+// ── Node trace ─────────────────────────────────────────────────────────────────
 function setTrace(done, active){
-  $('node-trace').innerHTML = NODES.map((n,i)=>{
-    const cls = done.includes(n)?'done':(n===active?'active':'');
-    const sep = i<NODES.length-1?`<span style="color:var(--text3);margin:0 2px">→</span>`:'';
+  const nodes = state.agentMode === 'multi' ? MULTI_NODES : SINGLE_NODES;
+  $('node-trace').innerHTML = nodes.map((n,i) => {
+    const cls = done.includes(n) ? 'done' : (n===active ? 'active' : '');
+    const sep = i < nodes.length-1
+      ? `<span style="color:var(--text3);margin:0 2px">→</span>`
+      : '';
     return `<span class="n-pill ${cls}">${n}</span>${sep}`;
   }).join('');
 }
 
+// ── Stats ──────────────────────────────────────────────────────────────────────
 function updateStats(){
   const s = state.sessions[state.activeId];
   if(!s) return;
-  $('pill-steps').textContent = s.iters+' steps';
-  $('pill-tools').textContent = s.tools+' tools';
+  $('pill-steps').textContent = s.iters + ' steps';
 }
 
-// ── API call ───────────────────────────────────────────────────────────────────
-async function callAPI(message, sessionId){
+// ── API calls ──────────────────────────────────────────────────────────────────
+async function callSingleAgent(message, sessionId){
   const url = $('api-url').value.replace(/\/+$/,'');
   const res = await fetch(`${url}/chat`, {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({
-      message,
-      session_id: sessionId,
-      provider: state.provider,
-    }),
+    method:  'POST',
+    headers: {'Content-Type':'application/json'},
+    body:    JSON.stringify({ message, session_id: sessionId }),
   });
   if(!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
   return res.json();
 }
 
-// ── Send ───────────────────────────────────────────────────────────────────────
+async function callMultiAgent(message, sessionId){
+  const url = $('api-url').value.replace(/\/+$/,'');
+  const res = await fetch(`${url}/multi-agent/chat`, {
+    method:  'POST',
+    headers: {'Content-Type':'application/json'},
+    body:    JSON.stringify({ message, session_id: sessionId }),
+  });
+  if(!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+// ── Demo fallback ──────────────────────────────────────────────────────────────
+function demoResponse(text){
+  const lower = text.toLowerCase();
+  if(/calculat|math|\d+\s*[\+\-\*\/]/.test(lower))
+    return {response:'(demo) Calculator would run here. Start uvicorn to connect.',
+            tool_results:[{tool:'calculator'}], iteration_count:1, agent_used:'code'};
+  if(/search|latest|news|policy|document/.test(lower))
+    return {response:'(demo) Document/web search would run here. Start uvicorn to connect.',
+            tool_results:[{tool:'search_documents'}], iteration_count:1, agent_used:'research'};
+  return {response:'(demo) Your agent is not connected.\n\nRun:\nuvicorn api.server:app --reload --port 8000',
+          tool_results:[], iteration_count:1, agent_used:'general'};
+}
+
+// ── Send message ───────────────────────────────────────────────────────────────
 async function sendMsg(){
   const input = $('msg-input');
-  const text = input.value.trim();
+  const text  = input.value.trim();
   if(!text || !state.activeId) return;
-  input.value=''; autoResize(input);
+  input.value = ''; autoResize(input);
 
   const s = state.sessions[state.activeId];
   s.messages.push({role:'user', text, time:ts(), prov:state.provider});
   renderMessages();
   $('send-btn').disabled = true;
 
-  // Animate trace
-  setTrace([], 'input_validator');
+  const isMulti = state.agentMode === 'multi';
+
+  // ── Animate trace ────────────────────────────────────────────────────────────
+  if(isMulti){
+    setTrace([], 'supervisor_classifier');
+  } else {
+    setTrace([], 'input_validator');
+  }
   addThinking();
 
   try {
-    // Try real backend first
-    const apiUrl = $('api-url').value.replace(/\/+$/,'');
-
-    // Animate nodes while waiting
-    const traceAnim = (async()=>{
-      await delay(300); setTrace(['input_validator'],'llm_reasoner');
-      await delay(500); setTrace(['input_validator','llm_reasoner'],'tool_executor');
-    })();
+    // ── Animate while waiting ──────────────────────────────────────────────────
+    const traceAnim = isMulti
+      ? (async()=>{
+          await delay(400);
+          setTrace(['supervisor_classifier'], 'supervisor_run_agent');
+          await delay(600);
+          setTrace(['supervisor_classifier','supervisor_run_agent'], 'supervisor_formatter');
+        })()
+      : (async()=>{
+          await delay(300);
+          setTrace(['input_validator'], 'llm_reasoner');
+          await delay(500);
+          setTrace(['input_validator','llm_reasoner'], 'tool_executor');
+        })();
 
     let data;
     try {
-      data = await callAPI(text, state.activeId);
+      data = isMulti
+        ? await callMultiAgent(text, state.activeId)
+        : await callSingleAgent(text, state.activeId);
     } catch(err) {
-      // Backend not running — use demo mode
       await traceAnim;
-      await delay(600);
+      await delay(400);
       data = demoResponse(text);
     }
 
-    setTrace(['input_validator','llm_reasoner','tool_executor'],'response_formatter');
-    await delay(250);
-    setTrace(NODES,'');
+    // ── Complete trace animation ───────────────────────────────────────────────
+    if(isMulti){
+      setTrace(MULTI_NODES, '');
+    } else {
+      setTrace(SINGLE_NODES, '');
+    }
+    await delay(150);
     removeThinking();
 
-    s.iters += data.iteration_count || 1;
-    s.tools += (data.tool_results||[]).length;
+    // ── Update session ─────────────────────────────────────────────────────────
+    const iters     = data.iteration_count || 1;
+    const tools     = (data.tool_results||[]).map(t => t.tool || t.name || 'tool');
+    const agentUsed = data.agent_used || null;
+
+    s.iters += iters;
+    s.tools += tools.length;
+
     s.messages.push({
-      role:'agent',
-      text: data.response || data.final_response || '(no response)',
-      tools: (data.tool_results||[]).map(t=>t.tool||t.name||'tool'),
-      time: ts(),
-      prov: state.provider,
+      role:      'agent',
+      text:      data.response || data.final_response || '(no response)',
+      tools,
+      agentUsed,
+      time:      ts(),
+      prov:      state.provider,
     });
 
   } catch(err) {
     removeThinking();
-    setTrace(NODES.slice(0,2),'');
-    showToast('Error: '+err.message);
-    s.messages.push({role:'agent', text:'Something went wrong. Check the console.', tools:[], time:ts(), prov:state.provider});
+    setTrace([], '');
+    showToast('Error: ' + err.message);
+    s.messages.push({
+      role:'agent', text:'Something went wrong. Check the console.',
+      tools:[], agentUsed:null, time:ts(), prov:state.provider,
+    });
   }
 
   renderMessages();
@@ -400,18 +505,7 @@ async function sendMsg(){
   input.focus();
 }
 
-// ── Demo mode (when backend is offline) ───────────────────────────────────────
-function demoResponse(text){
-  const lower = text.toLowerCase();
-  if(lower.includes('calculat')||lower.includes('math')||/\d+\s*[\+\-\*\/]/.test(lower)){
-    return {response:'(demo mode) I would call the calculator tool to compute that. Connect your backend to get real answers!', tool_results:[{tool:'calculator'}], iteration_count:2};
-  }
-  if(lower.includes('search')||lower.includes('latest')||lower.includes('news')){
-    return {response:'(demo mode) I would run a web search for that. Start your FastAPI server to connect the real agent.', tool_results:[{tool:'web_search'}], iteration_count:2};
-  }
-  return {response:'(demo mode) Your LangGraph agent is not connected yet. Run:\n\nuvicorn api.server:app --reload\n\nThen refresh this page.', tool_results:[], iteration_count:1};
-}
-
+// ── Keyboard + resize ──────────────────────────────────────────────────────────
 function handleKey(e){ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();} }
 function autoResize(el){ el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,120)+'px'; }
 </script>
