@@ -51,9 +51,10 @@ def stream_response(api_base: str, message: str, session_id: str):
     url = f"{api_base.rstrip('/')}/chat/stream"
     try:
         with requests.post(
-            url,
-            json={"message": message, "session_id": session_id},
-            stream=True, timeout=120,
+                url,
+                json={"message": message, "session_id": session_id},
+                headers=get_headers(),
+                stream=True, timeout=120,
         ) as resp:
             resp.raise_for_status()
             for raw_line in resp.iter_lines():
@@ -86,6 +87,7 @@ def fetch_single(api_base: str, message: str, session_id: str) -> dict:
     resp = requests.post(
         f"{api_base.rstrip('/')}/chat",
         json={"message": message, "session_id": session_id},
+        headers=get_headers(),
         timeout=120,
     )
     resp.raise_for_status()
@@ -96,6 +98,7 @@ def fetch_multi(api_base: str, message: str, session_id: str) -> dict:
     resp = requests.post(
         f"{api_base.rstrip('/')}/multi-agent/chat",
         json={"message": message, "session_id": session_id},
+        headers=get_headers(),
         timeout=120,
     )
     resp.raise_for_status()
@@ -107,6 +110,7 @@ def check_pending(api_base: str, session_id: str, mode: str) -> dict:
         resp = requests.get(
             f"{api_base.rstrip('/')}/chat/pending/{session_id}",
             params={"mode": mode},
+            headers=get_headers(),
             timeout=5,
         )
         if resp.ok:
@@ -125,6 +129,7 @@ def resume_session(api_base: str, session_id: str,
     resp = requests.post(
         f"{api_base.rstrip('/')}/chat/resume/{session_id}",
         json=payload,
+        headers=get_headers(),
         timeout=120,
     )
     resp.raise_for_status()
@@ -157,6 +162,19 @@ with st.sidebar:
     st.divider()
 
     api_base = st.text_input("Backend URL", value="http://localhost:8000")
+
+    api_key = st.text_input(
+        "API Key",
+        value="",
+        type="password",
+        placeholder="sk-xxx (leave empty if auth disabled)",
+    )
+
+    def get_headers() -> dict:
+        """Returns auth headers if key is set."""
+        if api_key:
+            return {"X-API-Key": api_key}
+        return {}
 
     provider = st.selectbox("LLM Provider", [
         "bedrock", "groq", "openai", "anthropic",

@@ -66,6 +66,9 @@ from agent.state import AgentState
 from config.settings import get_settings
 from observability.logger import log
 
+from api.auth import require_api_key
+from fastapi import Depends
+
 settings = get_settings()
 
 # ── LangSmith client (optional — only used if tracing enabled) ────────────────
@@ -176,6 +179,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Rate limit header middleware ───────────────────────────────────────────────
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import Response as StarletteResponse
+
+class RateLimitHeaderMiddleware(BaseHTTPMiddleware):
+    """
+    Attaches X-RateLimit-* headers to every response
+    when they were set by the require_api_key dependency.
+    """
+    async def dispatch(self, request: StarletteRequest, call_next):
+        response = await call_next(request)
+        headers  = getattr(request.state, "rate_limit_headers", {})
+        for key, val in headers.items():
+            response.headers[key] = val
+        return response
+
+app.add_middleware(RateLimitHeaderMiddleware)
 
 # ── Request / Response models ─────────────────────────────────────────────────
 class ChatRequest(BaseModel):
@@ -253,7 +274,7 @@ async def health():
 
 # ── POST /chat ────────────────────────────────────────────────────────────────
 @app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, key_meta: dict = Depends(require_api_key),):
     session_id = req.session_id or str(uuid.uuid4())
     graph      = get_graph()
 
@@ -324,7 +345,7 @@ async def chat(req: ChatRequest):
 
 # ── POST /chat/stream ─────────────────────────────────────────────────────────
 @app.post("/chat/stream")
-async def chat_stream(req: ChatRequest):
+async def chat_stream(req: ChatRequest, key_meta: dict = Depends(require_api_key),):
     session_id = req.session_id or str(uuid.uuid4())
     graph      = get_graph()
 
@@ -354,7 +375,7 @@ async def chat_stream(req: ChatRequest):
 
 # ── POST /feedback ────────────────────────────────────────────────────────────
 @app.post("/feedback")
-async def submit_feedback(req: FeedbackRequest):
+async def submit_feedback(req: FeedbackRequest,key_meta: dict = Depends(require_api_key), ):
     """Send thumbs up/down score for a run back to LangSmith."""
     if not _langsmith_client:
         return {"status": "langsmith not enabled"}
@@ -373,7 +394,7 @@ async def submit_feedback(req: FeedbackRequest):
 
 # ── GET /sessions/{session_id}/history ────────────────────────────────────────
 @app.get("/sessions/{session_id}/history")
-async def get_session_history(session_id: str):
+async def get_session_history(session_id: str, key_meta: dict = Depends(require_api_key),):
     graph  = get_graph()
     config = {"configurable": {"thread_id": session_id}}
     try:
@@ -398,7 +419,7 @@ class MultiAgentResponse(BaseModel):
 
 
 @app.post("/multi-agent/chat", response_model=MultiAgentResponse)
-async def multi_agent_chat(req: ChatRequest):
+async def multi_agent_chat(req: ChatRequest,key_meta: dict = Depends(require_api_key), ):
     """
     Multi-agent endpoint — supervisor routes to the best specialist.
     research agent  → web search + document search
@@ -482,7 +503,7 @@ async def multi_agent_chat(req: ChatRequest):
     
 # ── GET /chat/pending/{session_id} ────────────────────────────────────────────
 @app.get("/chat/pending/{session_id}")
-async def get_pending(session_id: str, mode: str = "single"):
+async def get_pending(session_id: str, mode: str = "single",key_meta: dict = Depends(require_api_key), ):
     """
     Check if a session is paused waiting for human approval.
     Returns the pending node and what it's about to do.
@@ -555,7 +576,7 @@ async def get_pending(session_id: str, mode: str = "single"):
 
 # ── POST /chat/resume/{session_id} ────────────────────────────────────────────
 @app.post("/chat/resume/{session_id}", response_model=ChatResponse)
-async def resume_chat(session_id: str, req: ResumeRequest):
+async def resume_chat(session_id: str, req: ResumeRequest,key_meta: dict = Depends(require_api_key), ):
     """
     Resume a paused graph.
 
@@ -652,3 +673,17 @@ async def resume_chat(session_id: str, req: ResumeRequest):
     except Exception as e:
         log.error("resume_error", session_id=session_id, error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
+    
+# ── GET /api/auth/validate ────────────────────────────────────────────────────
+@app.get("/api/auth/validate")
+async def validate_key(key_meta: dict = Depends(require_api_key)):
+    """
+    Test endpoint — validates an API key and returns its metadata.
+    Use this to confirm your key works before making real requests.
+    """
+    return {
+        "valid":    True,
+        "name":     key_meta["name"],
+        "rpm":      key_meta["rpm"],
+        "message":  f"Key is valid. Rate limit: {key_meta['rpm']} req/min.",
+    }

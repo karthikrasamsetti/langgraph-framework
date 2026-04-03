@@ -104,6 +104,16 @@ class Settings(BaseSettings):
     HUMAN_IN_LOOP_NODES:   str  = "tool_executor,supervisor_run_agent"
     # comma-separated node names to interrupt before
 
+    # ── Auth ──────────────────────────────────────────────────────────────────────
+    AUTH_ENABLED:              bool = False
+    API_KEYS:                  str  = ""
+    # Format: key:name:rpm,key:name:rpm
+    # Example: sk-prod-abc:production:100,sk-dev-xyz:development:20
+
+    # ── Rate limiting ─────────────────────────────────────────────────────────────
+    RATE_LIMIT_ENABLED:        bool = True
+    RATE_LIMIT_WINDOW_SECONDS: int  = 60
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
@@ -128,3 +138,33 @@ def get_human_in_loop_nodes() -> list[str]:
     if not s.HUMAN_IN_LOOP_ENABLED:
         return []
     return [n.strip() for n in s.HUMAN_IN_LOOP_NODES.split(",") if n.strip()]
+
+def parse_api_keys() -> dict:
+    """
+    Parses API_KEYS string into a dict.
+    Format: key:name:rpm,key:name:rpm
+    Returns: {key: {"name": str, "rpm": int}}
+    """
+    s = get_settings()
+    if not s.API_KEYS:
+        return {}
+
+    keys = {}
+    for entry in s.API_KEYS.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        parts = entry.split(":")
+        if len(parts) == 3:
+            key, name, rpm = parts
+            keys[key.strip()] = {
+                "name": name.strip(),
+                "rpm":  int(rpm.strip()),
+            }
+        elif len(parts) == 1:
+            # Simple key with no metadata — default 60 rpm
+            keys[parts[0].strip()] = {
+                "name": "default",
+                "rpm":  60,
+            }
+    return keys

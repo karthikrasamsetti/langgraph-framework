@@ -191,9 +191,15 @@
     </div>
 
     <div class="provider-block">
-      <label>API base URL</label>
-      <input type="text" id="api-url" value="http://localhost:8000">
-    </div>
+  <label>API base URL</label>
+  <input type="text" id="api-url" value="http://localhost:8000">
+</div>
+
+<div class="provider-block">
+  <label>API Key</label>
+  <input type="password" id="api-key"
+    placeholder="sk-xxx (leave empty if auth disabled)">
+</div>
 
     <div class="sessions-list" id="sessions-list"></div>
     <div class="new-sess-btn" onclick="newSession()">+ new session</div>
@@ -263,6 +269,12 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
 function showToast(msg, ms=4000){
   const t=$('toast'); t.textContent=msg; t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),ms);
+}
+function getHeaders(){
+  const key = $('api-key').value.trim();
+  const headers = {'Content-Type': 'application/json'};
+  if(key) headers['X-API-Key'] = key;
+  return headers;
 }
 function escHtml(s){
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -445,8 +457,9 @@ async function checkPending(){
   const url=$('api-url').value.replace(/\/+$/,'');
   try{
     const resp=await fetch(
-      `${url}/chat/pending/${state.activeId}?mode=${state.agentMode}`
-    );
+    `${url}/chat/pending/${state.activeId}?mode=${state.agentMode}`,
+    {headers:{'X-API-Key': $('api-key').value.trim()}}
+  );
     if(resp.ok){
       const data=await resp.json();
       state.pending=data.pending_node?data:null;
@@ -462,7 +475,7 @@ async function approveAction(){
   try{
     const resp=await fetch(`${url}/chat/resume/${state.activeId}`,{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:getHeaders(),
       body:JSON.stringify({action:'approve',mode:'single'}),
     });
     const data=await resp.json();
@@ -481,7 +494,7 @@ async function approveRoute(){
   try{
     const resp=await fetch(`${url}/chat/resume/${state.activeId}`,{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:getHeaders(),
       body:JSON.stringify({
         action,
         mode:'multi',
@@ -500,7 +513,7 @@ async function rejectAction(){
   try{
     const resp=await fetch(`${url}/chat/resume/${state.activeId}`,{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:getHeaders(),
       body:JSON.stringify({action:'reject',mode}),
     });
     const data=await resp.json();
@@ -532,9 +545,9 @@ function pushAgentMessage(data,action,agentUsed=''){
 async function callSingle(message,sessionId){
   const url=$('api-url').value.replace(/\/+$/,'');
   const res=await fetch(`${url}/chat`,{
-    method:'POST',headers:{'Content-Type':'application/json'},
+    method:'POST',headers:getHeaders(),
     body:JSON.stringify({message,session_id:sessionId}),
-  });
+});
   if(!res.ok)throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
@@ -542,9 +555,9 @@ async function callSingle(message,sessionId){
 async function callMulti(message,sessionId){
   const url=$('api-url').value.replace(/\/+$/,'');
   const res=await fetch(`${url}/multi-agent/chat`,{
-    method:'POST',headers:{'Content-Type':'application/json'},
+    method:'POST',headers:getHeaders(),
     body:JSON.stringify({message,session_id:sessionId}),
-  });
+});
   if(!res.ok)throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
