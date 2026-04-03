@@ -199,6 +199,26 @@ class FeedbackRequest(BaseModel):
     score:   float
     comment: Optional[str] = None
 
+# ── Human-in-the-loop models ───────────────────────────────────────────────────
+class PendingToolCall(BaseModel):
+    name: str
+    args: dict
+
+
+class PendingApproval(BaseModel):
+    session_id:   str
+    mode:         str          # "single" or "multi"
+    pending_node: str          # which node is paused
+    next_agent:   Optional[str] = None      # for multi-agent
+    pending_tools: list[PendingToolCall] = []  # for single agent
+    message:      str          # human-readable description
+
+
+class ResumeRequest(BaseModel):
+    action:     str            # "approve" | "reject" | "override"
+    next_agent: Optional[str] = None   # for override in multi-agent
+    mode:       str = "single"         # "single" or "multi"
+
 
 # ── Helper: build LangGraph config ────────────────────────────────────────────
 def _build_config(session_id: str, user_id: Optional[str] = None) -> dict:
@@ -258,13 +278,26 @@ async def chat(req: ChatRequest):
     config = _build_config(session_id, req.user_id)
 
     try:
-        # ── Run the graph ──────────────────────────────────────────
-        # LangSmith tracing is fully automatic via the env vars we set above.
-        # langgraph reads LANGCHAIN_TRACING_V2 + LANGCHAIN_API_KEY at invoke time
-        # and sends traces in a background thread — no context manager needed.
         final_state = await asyncio.to_thread(
             graph.invoke, initial_state, config
         )
+
+        # ── Check if graph paused at an interrupt point ────────────────────────
+        current_state = graph.get_state(config)
+        if current_state.next:
+            pending_node = current_state.next[0]
+            log.info("graph_paused",
+                     session_id=session_id,
+                     pending_node=pending_node)
+
+            # Return pending status — UI will poll /chat/pending
+            return ChatResponse(
+                session_id=session_id,
+                response="",
+                tool_results=[],
+                iteration_count=final_state.get("iteration_count", 0),
+                error=f"pending:{pending_node}",
+            )
 
         trace_url = (
             f"https://smith.langchain.com/projects/{settings.LANGSMITH_PROJECT}"
@@ -274,8 +307,7 @@ async def chat(req: ChatRequest):
         log.info("chat_complete",
                  session_id=session_id,
                  iterations=final_state.get("iteration_count", 0),
-                 tools=len(final_state.get("tool_results", [])),
-                 trace_url=trace_url)
+                 tools=len(final_state.get("tool_results", [])))
 
         return ChatResponse(
             session_id=session_id,
@@ -289,7 +321,6 @@ async def chat(req: ChatRequest):
     except Exception as exc:
         log.error("chat_error", session_id=session_id, error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc))
-
 
 # ── POST /chat/stream ─────────────────────────────────────────────────────────
 @app.post("/chat/stream")
@@ -409,6 +440,22 @@ async def multi_agent_chat(req: ChatRequest):
             graph.invoke, initial_state, config
         )
 
+        # ── Check if graph paused at interrupt point ───────────────────────────
+        current_state = graph.get_state(config)
+        if current_state.next:
+            pending_node = current_state.next[0]
+            log.info("supervisor_paused",
+                     session_id=session_id,
+                     pending_node=pending_node)
+            return MultiAgentResponse(
+                session_id=session_id,
+                response="",
+                agent_used=final_state.get("next_agent"),
+                iteration_count=0,
+                error=f"pending:{pending_node}",
+            )
+
+        # ── Graph completed normally ───────────────────────────────────────────
         trace_url = (
             f"https://smith.langchain.com/projects/{settings.LANGSMITH_PROJECT}"
             if LANGSMITH_ENABLED else None
@@ -431,3 +478,177 @@ async def multi_agent_chat(req: ChatRequest):
     except Exception as exc:
         log.error("multi_agent_error", session_id=session_id, error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc))
+    
+    
+# ── GET /chat/pending/{session_id} ────────────────────────────────────────────
+@app.get("/chat/pending/{session_id}")
+async def get_pending(session_id: str, mode: str = "single"):
+    """
+    Check if a session is paused waiting for human approval.
+    Returns the pending node and what it's about to do.
+    """
+    try:
+        if mode == "multi":
+            from agents.supervisor import get_supervisor_graph
+            graph  = get_supervisor_graph()
+            config = {"configurable": {"thread_id": f"multi-{session_id}"}}
+        else:
+            graph  = get_graph()
+            config = {"configurable": {"thread_id": session_id}}
+
+        state = graph.get_state(config)
+
+        # state.next is empty tuple when graph finished
+        # non-empty means graph is paused at that node
+        if not state.next:
+            return {"status": "completed", "session_id": session_id}
+
+        pending_node = state.next[0]
+        values       = state.values
+
+        # ── Single agent — extract pending tool calls ──────────────────────────
+        if mode == "single" and pending_node == "tool_executor":
+            last_msg   = values.get("messages", [])[-1] if values.get("messages") else None
+            tool_calls = getattr(last_msg, "tool_calls", []) if last_msg else []
+
+            pending_tools = [
+                PendingToolCall(name=tc["name"], args=tc["args"])
+                for tc in tool_calls
+            ]
+
+            tools_desc = ", ".join(
+                f"{t.name}({list(t.args.values())[0] if t.args else ''})"
+                for t in pending_tools
+            )
+
+            return PendingApproval(
+                session_id=session_id,
+                mode="single",
+                pending_node=pending_node,
+                pending_tools=pending_tools,
+                message=f"Agent wants to call: {tools_desc}",
+            )
+
+        # ── Multi-agent — extract routing decision ─────────────────────────────
+        elif mode == "multi" and pending_node == "supervisor_run_agent":
+            next_agent = values.get("next_agent", "unknown")
+            return PendingApproval(
+                session_id=session_id,
+                mode="multi",
+                pending_node=pending_node,
+                next_agent=next_agent,
+                message=f"Supervisor chose: {next_agent} agent",
+            )
+
+        else:
+            return PendingApproval(
+                session_id=session_id,
+                mode=mode,
+                pending_node=pending_node,
+                message=f"Graph paused before: {pending_node}",
+            )
+
+    except Exception as e:
+        log.error("get_pending_error", session_id=session_id, error=str(e))
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+# ── POST /chat/resume/{session_id} ────────────────────────────────────────────
+@app.post("/chat/resume/{session_id}", response_model=ChatResponse)
+async def resume_chat(session_id: str, req: ResumeRequest):
+    """
+    Resume a paused graph.
+
+    action=approve  → continue as planned
+    action=reject   → stop, return rejection message
+    action=override → change routing then continue (multi-agent only)
+    """
+    try:
+        if req.mode == "multi":
+            from agents.supervisor import get_supervisor_graph, SupervisorState
+            graph  = get_supervisor_graph()
+            config = {"configurable": {"thread_id": f"multi-{session_id}"}}
+        else:
+            graph  = get_graph()
+            config = {"configurable": {"thread_id": session_id}}
+
+        # ── Reject ────────────────────────────────────────────────────────────
+        if req.action == "reject":
+            log.info("human_rejected",
+                     session_id=session_id,
+                     mode=req.mode)
+            return ChatResponse(
+                session_id=session_id,
+                response="Action rejected by human reviewer. The agent has been stopped.",
+                tool_results=[],
+                iteration_count=0,
+                error="rejected_by_human",
+            )
+
+        # ── Override (multi-agent only) ───────────────────────────────────────
+        if req.action == "override" and req.next_agent:
+            if req.next_agent not in ("research", "code", "general"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid agent: {req.next_agent}. Choose research, code, or general."
+                )
+            # Update state with the human's routing choice
+            graph.update_state(
+                config,
+                {"next_agent": req.next_agent},
+            )
+            log.info("human_override",
+                     session_id=session_id,
+                     new_agent=req.next_agent)
+
+        # ── Approve or override — resume graph ────────────────────────────────
+        log.info("human_approved",
+                 session_id=session_id,
+                 action=req.action,
+                 mode=req.mode)
+
+        final_state = await asyncio.to_thread(
+            graph.invoke, None, config   # None = no new input, just resume
+        )
+
+        # Check if graph paused again (another interrupt point)
+        current_state = graph.get_state(config)
+        if current_state.next:
+            # Graph paused at another node — return pending status
+            return ChatResponse(
+                session_id=session_id,
+                response="",
+                tool_results=[],
+                iteration_count=final_state.get("iteration_count", 0),
+                error=f"pending:{current_state.next[0]}",
+            )
+
+        # Graph completed
+        if req.mode == "multi":
+            response_text = final_state.get("final_response", "")
+        else:
+            response_text = final_state.get("final_response", "")
+
+        trace_url = (
+            f"https://smith.langchain.com/projects/{settings.LANGSMITH_PROJECT}"
+            if LANGSMITH_ENABLED else None
+        )
+
+        log.info("resume_complete",
+                 session_id=session_id,
+                 mode=req.mode)
+
+        return ChatResponse(
+            session_id=session_id,
+            response=response_text,
+            tool_results=final_state.get("tool_results", []),
+            iteration_count=final_state.get("iteration_count", 0),
+            error=None,
+            trace_url=trace_url,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error("resume_error", session_id=session_id, error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))

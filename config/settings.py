@@ -99,6 +99,11 @@ class Settings(BaseSettings):
     MULTI_AGENT_ENABLED: bool = True
     SUPERVISOR_MAX_ITERATIONS: int = 3   # max specialist calls per query
 
+    # ── Human-in-the-loop ─────────────────────────────────────────────────────────
+    HUMAN_IN_LOOP_ENABLED: bool = False
+    HUMAN_IN_LOOP_NODES:   str  = "tool_executor,supervisor_run_agent"
+    # comma-separated node names to interrupt before
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
@@ -110,3 +115,16 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Cached singleton — one parse per process."""
     return Settings()
+
+
+# ── Helper — outside the class ─────────────────────────────────────────────────
+def get_human_in_loop_nodes() -> list[str]:
+    """
+    Returns HUMAN_IN_LOOP_NODES as a clean Python list.
+    Standalone function because Pydantic BaseSettings
+    does not support @property decorators.
+    """
+    s = get_settings()
+    if not s.HUMAN_IN_LOOP_ENABLED:
+        return []
+    return [n.strip() for n in s.HUMAN_IN_LOOP_NODES.split(",") if n.strip()]

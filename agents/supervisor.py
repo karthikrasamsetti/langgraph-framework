@@ -11,7 +11,7 @@ from langgraph.graph.message import add_messages
 
 from llm.factory import get_llm
 from observability.logger import log, timed_node
-from config.settings import get_settings
+from config.settings import get_settings, get_human_in_loop_nodes
 
 settings = get_settings()
 
@@ -190,7 +190,6 @@ def after_run_agent(
     return "supervisor_formatter"
 
 
-# ── Graph ──────────────────────────────────────────────────────────────────────
 def build_supervisor_graph():
     g = StateGraph(SupervisorState)
 
@@ -216,8 +215,28 @@ def build_supervisor_graph():
     )
 
     from agent.checkpointer import get_checkpointer
-    return g.compile(checkpointer=get_checkpointer())
+    checkpointer = get_checkpointer()
 
+    # ── interrupt_before for multi-agent ───────────────────────────────────────
+    all_interrupt_nodes = get_human_in_loop_nodes()
+    valid_supervisor_nodes = {
+        "supervisor_classifier",
+        "supervisor_run_agent",
+        "supervisor_formatter",
+    }
+    interrupt_nodes = [
+        n for n in all_interrupt_nodes
+        if n in valid_supervisor_nodes
+    ]
+
+    compile_kwargs = {"checkpointer": checkpointer}
+    if interrupt_nodes:
+        compile_kwargs["interrupt_before"] = interrupt_nodes
+        log.info("human_in_loop_enabled",
+                 graph="supervisor",
+                 interrupt_before=interrupt_nodes)
+
+    return g.compile(**compile_kwargs)
 
 _supervisor_graph = None
 def get_supervisor_graph():
