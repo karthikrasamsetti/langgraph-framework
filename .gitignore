@@ -54,3 +54,10 @@ htmlcov/
 # ── uv ────────────────────────────────────────────────────────────────────────
 .uv/
 uv.lock
+
+# SQLite checkpoints
+checkpoints.db
+checkpoints.db-wal
+checkpoints.db-shm
+*.db-wal
+*.db-shm
